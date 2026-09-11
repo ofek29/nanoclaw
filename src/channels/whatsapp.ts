@@ -209,6 +209,53 @@ type MentionContextSource = {
 };
 
 /**
+ * Subset of a normalized Baileys message content carrying the message types
+ * that can host a `contextInfo.participant` — the author of the quoted
+ * message. `audioMessage` is included deliberately: a voice note carries no
+ * caption and no `mentionedJid`, so replying is the only way to address the
+ * bot by voice.
+ */
+type QuotedContextSource = {
+  extendedTextMessage?: { contextInfo?: { participant?: string | null } | null } | null;
+  imageMessage?: { contextInfo?: { participant?: string | null } | null } | null;
+  videoMessage?: { contextInfo?: { participant?: string | null } | null } | null;
+  documentMessage?: { contextInfo?: { participant?: string | null } | null } | null;
+  audioMessage?: { contextInfo?: { participant?: string | null } | null } | null;
+};
+
+/** Strip a device suffix (`user:12@domain` -> `user@domain`). */
+function stripDeviceSuffix(jid: string): string {
+  const [user, domain] = jid.split('@');
+  return domain ? `${user.split(':')[0]}@${domain}` : jid;
+}
+
+/**
+ * Detect a reply that quotes one of the bot's own messages, so a user can
+ * answer the assistant by replying instead of re-@-mentioning it. Folded
+ * into the mention decision alongside isBotMentionedInGroup(); engage_mode
+ * stays 'mention'.
+ *
+ * Exported for unit testing.
+ */
+export function isReplyToBot(
+  normalized: QuotedContextSource,
+  botPhoneJid: string | undefined,
+  botLidUser: string | undefined,
+): boolean {
+  if (!botPhoneJid && !botLidUser) return false;
+  const participant =
+    normalized.extendedTextMessage?.contextInfo?.participant ||
+    normalized.imageMessage?.contextInfo?.participant ||
+    normalized.videoMessage?.contextInfo?.participant ||
+    normalized.documentMessage?.contextInfo?.participant ||
+    normalized.audioMessage?.contextInfo?.participant ||
+    '';
+  if (!participant) return false;
+  const bare = stripDeviceSuffix(participant);
+  return bare === botPhoneJid || (!!botLidUser && bare === `${botLidUser}@lid`);
+}
+
+/**
  * Detect an explicit @-mention of the bot in a WhatsApp group message.
  * WhatsApp carries mentions in `contextInfo.mentionedJid` on the text +
  * caption-bearing message types. Matches against both the bot's phone
@@ -919,6 +966,11 @@ registerChannelAdapter('whatsapp', {
                   !hasMentionPills(normalized) &&
                   isBotTypedMention(content, ASSISTANT_NAME, botPhoneJid)));
 
+            // A reply quoting one of the bot's own messages engages it too, so
+            // a user can answer without re-@-mentioning. Carried local patch.
+            const botEngagedInGroup =
+              botMentionedInGroup || (isGroup && isReplyToBot(normalized, botPhoneJid, botLidUser));
+
             const inbound: InboundMessage = {
               id: msg.key.id || `wa-${Date.now()}`,
               kind: 'chat',
@@ -928,7 +980,7 @@ registerChannelAdapter('whatsapp', {
               // chat is unknown, instead of silently dropping. In groups,
               // only an explicit @-mention counts. Shared mode: never a
               // mention — DMs and tags address the human owner.
-              isMention: computeIsMention(WHATSAPP_SHARED, isGroup, botMentionedInGroup),
+              isMention: computeIsMention(WHATSAPP_SHARED, isGroup, botEngagedInGroup),
               isGroup,
               content: {
                 text: content,
