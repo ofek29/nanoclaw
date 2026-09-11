@@ -32,6 +32,7 @@ import { backfillNewSession, fanInboundMessage } from './modules/cross-session-c
 import { startTypingRefresh, stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
 import { resolveSession, writeSessionMessage, writeOutboundDirect } from './session-manager.js';
+import { resolveVoiceLanguage, transcribeAndStripAudio } from './preprocessing/voice-content.js';
 import { requestWake } from './request-wake.js';
 import { getSession } from './db/sessions.js';
 import type { AgentGroup, MessagingGroup, MessagingGroupAgent, Session } from './types.js';
@@ -585,6 +586,17 @@ async function deliverToAgent(
     await backfillNewSession(agentGroup, session, mg);
   }
 
+  // LOCAL ADDITION (voice transcription): transcribe any audio attachments in
+  // this agent's configured language and strip the audio bytes before the
+  // content reaches ANY sink. Computed once and used for the session write,
+  // the cross-session fan, and the session-created hook alike — audio must not
+  // survive in a sibling session. No-op when there are no audio attachments.
+  const preparedContent = await transcribeAndStripAudio(
+    event.message.content,
+    resolveVoiceLanguage(agentGroup.folder),
+    { platformId: event.platformId, agentGroupId: agent.agent_group_id },
+  );
+
   const messageId = messageIdForAgent(event.message.id, agent.agent_group_id);
   await writeSessionMessage(session.agent_group_id, session.id, {
     id: messageId,
@@ -593,7 +605,7 @@ async function deliverToAgent(
     platformId: deliveryAddr.platformId,
     channelType: deliveryAddr.channelType,
     threadId: deliveryAddr.threadId,
-    content: event.message.content,
+    content: preparedContent,
     trigger: wake,
   });
 
@@ -608,7 +620,7 @@ async function deliverToAgent(
       messageId,
       kind: event.message.kind,
       channelType: deliveryAddr.channelType,
-      content: event.message.content,
+      content: preparedContent,
       timestamp: event.message.timestamp,
     });
   }
@@ -625,7 +637,7 @@ async function deliverToAgent(
       message: {
         id: event.message.id,
         kind: event.message.kind,
-        content: event.message.content,
+        content: preparedContent,
         timestamp: event.message.timestamp,
       },
     });
