@@ -28,8 +28,10 @@ Invariants:
 - **Audio bytes stay out of every sink.** `deliverToAgent` has three content
   consumers — the session write, the cross-session fan, and the session-created
   hook. Transcribe once and pass the result to all three; fanning raw content
-  copies audio into sibling sessions. The on-disk file the Baileys adapter
-  writes is deleted after transcription.
+  copies audio into sibling sessions. Since v2026.10.0 the fan runs after the
+  wake, unawaited, and upstream passes it `event.message.content`; keep it on
+  `preparedContent`. The on-disk file the Baileys adapter writes is deleted
+  after transcription.
 - **Never throw.** Unreachable, failed and empty transcriptions all return a
   placeholder transcript, and unparseable content passes through untouched.
 
@@ -46,6 +48,14 @@ of the bot's own messages engages it too.
 `audioMessage` belongs in the quoted-source list: a voice note carries no
 caption and no `mentionedJid`, so replying is the only way to address the bot by
 voice.
+
+`whatsapp.ts` is a skill payload: `/update-nanoclaw` re-copies it from the
+`channels` registry branch on every validate, and a commit on `main` alone is
+overwritten. The refresh prefers `origin`, so the adapter change lives on the
+fork's `channels` branch (`upstream/channels` plus one commit). Before each
+update, merge `upstream/channels` into `origin/channels`, or the refresh copies
+a stale adapter. The `isReplyToBot` tests stay in `src/channels/whatsapp.test.ts`
+on `main`; a missing export fails the build, which is the tripwire.
 
 Both patches suit upstream. Sending them as PRs to the `channels` branch would
 retire this file.
