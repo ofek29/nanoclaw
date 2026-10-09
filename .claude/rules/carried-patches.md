@@ -57,5 +57,13 @@ update, merge `upstream/channels` into `origin/channels`, or the refresh copies
 a stale adapter. The `isReplyToBot` tests stay in `src/channels/whatsapp.test.ts`
 on `main`; a missing export fails the build, which is the tripwire.
 
+## Temporary: Claude Code pin ahead of upstream
+
+Sonia runs `claude-sonnet-5-5`, which Claude Code supports from 2.1.284. Upstream
+v2026.10.0 pins 2.1.280, so `container/cli-tools.json` and the Agent SDK in
+`container/agent-runner/package.json` + `bun.lock` carry 2.1.293 / 0.3.293. On a
+conflict keep the higher pair, CLI and SDK at the same patch number. Drop this
+section once upstream pins 2.1.284 or later.
+
 Both patches suit upstream. Sending them as PRs to the `channels` branch would
 retire this file.
